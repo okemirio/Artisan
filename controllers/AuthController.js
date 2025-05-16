@@ -152,14 +152,114 @@ const logout = async (req, res) => {
     res.json({ message: 'Logged out successfully.' });
   } catch (err) {
     console.error('Logout Error:', err.message);
-    
+
     res.status(500).json({ message: 'Error during logout.' });
   }
 };
 
+// Get User Info
+const getUserInfo = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const user = await UserModel.findById(userId).select('username email');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    return res.json({ username: user.username, email: user.email });
+  } catch (err) {
+    console.error('Error retrieving user info:', err.message);
+    return res.status(500).json({ message: 'Error retrieving user info' });
+  }
+};
+
+
+
+// Send Password Reset Code
+const sendPasswordResetCode = async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    const user = await UserModel.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: 'Email not found' });
+    }
+
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    user.resetCode = resetCode;
+    user.resetTokenExpiration = Date.now() + 3600000;
+    await user.save();
+
+    const transporter = nodemailer.createTransport({
+      service: 'Gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+
+    const mailOptions = {
+      to: user.email,
+      from: process.env.EMAIL_USER,
+      subject: 'Password Reset Code',
+      html: `
+        <p>You requested a password reset</p>
+        <p>Your reset code is <b>${resetCode}</b></p>
+        <p>If you did not request a password reset, please ignore this email.</p>
+      `,
+    };
+
+    transporter.sendMail(mailOptions, (err) => {
+      if (err) {
+        console.error('Error sending email:', err);
+        return res.status(500).json({ message: 'Failed to send reset email' });
+      } else {
+        return res.status(200).json({ message: 'Password reset code sent successfully' });
+      }
+    });
+  } catch (err) {
+    console.error('Error sending password reset code:', err.message);
+    return res.status(500).json({ message: 'Failed to send reset code' });
+  }
+};
+
+// Reset Password
+const resetPassword = async (req, res) => {
+  const { email, code, newPassword } = req.body;
+  console.log('Received reset request:', { email, code });
+
+  try {
+    const user = await UserModel.findOne({
+      email,
+      resetCode: code,
+      resetTokenExpiration: { $gt: Date.now() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid or expired reset code' });
+    }
+
+    const salt = await bcrypt.genSalt();
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    user.password = hashedPassword;
+    user.resetCode = undefined;
+    user.resetTokenExpiration = undefined;
+    await user.save();
+
+    return res.status(200).json({ message: 'Password has been reset successfully', success: true });
+  } catch (err) {
+    console.error('Error resetting password:', err.message);
+    return res.status(500).json({ message: 'Failed to reset password' });
+  }
+};
 module.exports = {
   register,
   login,
   refreshAccessToken,
   logout,
+  getUserInfo,
+  sendPasswordResetCode,
+  resetPassword,
 };

@@ -27,5 +27,13 @@ app.get('/', (req, res) => {
   res.send('Hello Artisan API 👋');
 });
 
-// 🔁 Export the serverless handler
+// Export serverless handler for Vercel
 module.exports.handler = serverless(app);
+
+// Local development support
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running at http://localhost:${PORT}`);
+  });
+}
