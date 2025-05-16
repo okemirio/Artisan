@@ -6,6 +6,7 @@ const verifyToken = (req, res, next) => {
   // Expected format: Bearer <token>
   const token = authHeader && authHeader.split(' ')[1];
 
+  
   if (!token) {
     return res.status(401).json({ message: 'Access token missing or invalid' });
   }
