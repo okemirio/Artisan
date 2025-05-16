@@ -8,13 +8,34 @@ const nodemailer = require('nodemailer');
 
 // Register a new user
 const register = async (req, res) => {
-  const { username, email, password, role } = req.body;
+  const { firstname, lastname, email, password, role = 'user' } = req.body;
 
-  if (!username || !email || !password || !role) {
+  // Validate input
+  if (!firstname || !lastname || !email || !password || !role) {
     return res.status(400).json({ message: 'All fields are required.' });
   }
 
-  if (!['artisan', 'user'].includes(role)) {
+  if (firstname.length < 2 || lastname.length < 2) {
+    return res.status(400).json({ message: 'Firstname and lastname must be at least 2 characters.' });
+  }
+
+  const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ message: 'Please provide a valid email address.' });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({ message: 'Password must be at least 8 characters long.' });
+  }
+
+  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/;
+  if (!passwordRegex.test(password)) {
+    return res.status(400).json({
+      message: 'Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.'
+    });
+  }
+
+  if (!['user', 'artisan'].includes(role)) {
     return res.status(400).json({ message: 'Invalid role specified.' });
   }
 
@@ -27,19 +48,40 @@ const register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = new UserModel({
-      username,
+      firstname,
+      lastname,
       email,
       password: hashedPassword,
       role,
+      createdAt: new Date(),
+      isActive: true,
+      emailVerified: false
     });
 
     await newUser.save();
-    res.status(201).json({ message: 'Registration successful.' });
+
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful.',
+      user: {
+        id: newUser._id,
+        firstname: newUser.firstname,
+        lastname: newUser.lastname,
+        email: newUser.email,
+        role: newUser.role
+      }
+    });
   } catch (err) {
     console.error('Register Error:', err.message);
-    res.status(500).json({ message: 'Server error during registration.' });
+    res.status(500).json({
+      success: false,
+      message: 'Server error during registration.',
+      error: err.message
+    });
   }
 };
+
+
 
 // Login
 const login = async (req, res) => {
@@ -110,6 +152,7 @@ const logout = async (req, res) => {
     res.json({ message: 'Logged out successfully.' });
   } catch (err) {
     console.error('Logout Error:', err.message);
+    
     res.status(500).json({ message: 'Error during logout.' });
   }
 };
