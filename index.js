@@ -3,8 +3,16 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
+const fs = require('fs');
 
 dotenv.config();
+
+// Ensure uploads/artisans folder exists before starting app
+const uploadDir = path.join(__dirname, 'uploads/artisans');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.log('✅ Created upload directory:', uploadDir);
+}
 
 const authRoutes = require('./Routes/auth/authRoutes');
 const artisanRoutes = require('./Routes/artisanRoutes');
