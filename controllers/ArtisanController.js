@@ -1,121 +1,238 @@
-const ArtisanProfile = require('../Models/ArtisanProfiles');
-const User = require('../Models/user');
-const bcrypt = require('bcryptjs');
+const ArtisanProfile = require("../Models/ArtisanProfiles");
+const User = require("../Models/user");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
 const registerArtisan = async (req, res) => {
   try {
     const errors = [];
 
-    // Step 1: Parse JSON fields from multipart/form-data
     let personalInfo, professionalInfo;
     try {
-      personalInfo = JSON.parse(req.body.personalInfo);
+      personalInfo = JSON.parse(req.body?.personalInfo);
     } catch {
       errors.push({ field: "personalInfo", message: "Invalid JSON format for personalInfo" });
     }
 
     try {
-      professionalInfo = JSON.parse(req.body.professionalInfo);
+      professionalInfo = JSON.parse(req.body?.professionalInfo);
     } catch {
       errors.push({ field: "professionalInfo", message: "Invalid JSON format for professionalInfo" });
     }
 
-    // Destructure other fields
     const { password, firstname, lastname } = req.body;
 
-    // Step 2: Validate all required fields (strict checks)
-    if (!personalInfo?.name) errors.push({ field: "personalInfo.name", message: "\"personalInfo.name\" is required" });
-    if (!personalInfo?.email) errors.push({ field: "personalInfo.email", message: "\"personalInfo.email\" is required" });
-    if (!personalInfo?.phoneNumber && !personalInfo?.phone) errors.push({ field: "personalInfo.phoneNumber", message: "\"personalInfo.phoneNumber\" is required" });
-    if (!personalInfo?.fullAddress && !personalInfo?.address) errors.push({ field: "personalInfo.fullAddress", message: "\"personalInfo.fullAddress\" is required" });
+    if (!personalInfo?.name)
+      errors.push({ field: "personalInfo.name", message: "Name is required" });
+    if (!personalInfo?.email)
+      errors.push({ field: "personalInfo.email", message: "Email is required" });
+    if (!personalInfo?.phoneNumber)
+      errors.push({ field: "personalInfo.phoneNumber", message: "Phone number is required" });
+    if (!personalInfo?.fullAddress)
+      errors.push({ field: "personalInfo.fullAddress", message: "Full address is required" });
 
-    if (!professionalInfo?.businessName) errors.push({ field: "professionalInfo.businessName", message: "\"professionalInfo.businessName\" is required" });
-    if (!professionalInfo?.artisanType) errors.push({ field: "professionalInfo.artisanType", message: "\"professionalInfo.artisanType\" is required" });
+    if (!professionalInfo?.businessName)
+      errors.push({ field: "professionalInfo.businessName", message: "Business name is required" });
+    if (!professionalInfo?.artisanType)
+      errors.push({ field: "professionalInfo.artisanType", message: "Artisan type is required" });
 
-    if (!password) errors.push({ field: "password", message: "\"password\" is required" });
-    if (!firstname) errors.push({ field: "firstname", message: "\"firstname\" is required" });
-    if (!lastname) errors.push({ field: "lastname", message: "\"lastname\" is required" });
+    if (!password) errors.push({ field: "password", message: "Password is required" });
+    if (!firstname) errors.push({ field: "firstname", message: "Firstname is required" });
+    if (!lastname) errors.push({ field: "lastname", message: "Lastname is required" });
 
-    // Step 3: Validate uploaded files existence
     const files = req.files || {};
-    if (!files.passportPhoto) errors.push({ field: "passportPhoto", message: "\"passportPhoto\" file is required" });
-    if (!files.govIdCard) errors.push({ field: "govIdCard", message: "\"govIdCard\" file is required" });
-    if (!files.businessCertificate) errors.push({ field: "businessCertificate", message: "\"businessCertificate\" file is required" });
-    if (!files.proofOfAddress) errors.push({ field: "proofOfAddress", message: "\"proofOfAddress\" file is required" });
+    const requiredFiles = [
+      "passportPhoto",
+      "govIdCard",
+      "businessCertificate",
+      "proofOfAddress",
+    ];
+    requiredFiles.forEach((field) => {
+      if (!files[field]) {
+        errors.push({ field, message: `${field} file is required` });
+      }
+    });
 
-    // Step 4: Return errors if any
     if (errors.length > 0) {
       return res.status(400).json({
         success: false,
         error: {
           code: "VALIDATION_ERROR",
           message: "Validation failed",
-          details: errors
-        }
+          details: errors,
+        },
       });
     }
 
-    // Step 5: Check if user with this email already exists (case-insensitive)
     const existingUser = await User.findOne({ email: personalInfo.email.toLowerCase() });
+
     if (existingUser) {
+      const existingProfile = await ArtisanProfile.findOne({ userId: existingUser._id });
+
+      if (existingProfile) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: "USER_EXISTS",
+            message: "User is already registered as an artisan",
+          },
+        });
+      }
+
       return res.status(400).json({
         success: false,
         error: {
-          code: "USER_EXISTS",
-          message: "User already exists with this email"
-        }
+          code: "NOT_ARTISAN",
+          message: "User already exists but is not registered as an artisan",
+        },
       });
     }
 
-    // Step 6: Hash password securely
-    const hashedPassword = await bcrypt.hash(password, 12); // use 12 rounds for better security
+    // ✅ Hash password properly
+    const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Step 7: Create new User
     const newUser = new User({
       firstname,
       lastname,
       email: personalInfo.email.toLowerCase(),
       password: hashedPassword,
-      role: 'artisan'
+      role: "artisan",
     });
+
     await newUser.save();
 
-    // Step 8: Map uploaded files to their filenames (store just filenames, or full URLs if you prefer)
+    const baseUrl = process.env.FILE_BASE_URL || "";
+
     const verificationDocuments = {
-      passportPhoto: files.passportPhoto[0].filename,
-      govIdCard: files.govIdCard[0].filename,
-      businessCertificate: files.businessCertificate[0].filename,
-      proofOfAddress: files.proofOfAddress[0].filename
+      passportPhoto: baseUrl + files.passportPhoto[0].filename,
+      govIdCard: baseUrl + files.govIdCard[0].filename,
+      businessCertificate: baseUrl + files.businessCertificate[0].filename,
+      proofOfAddress: baseUrl + files.proofOfAddress[0].filename,
     };
 
-    // Step 9: Create artisan profile linked to userId
     const artisanProfile = new ArtisanProfile({
       userId: newUser._id,
       personalInfo,
       professionalInfo,
       verificationDocuments,
-      status: 'pending'
+      status: "pending", // ✅ Now default to "pending" for production
     });
+
     await artisanProfile.save();
 
-    // Step 10: Return success response
     return res.status(201).json({
       success: true,
-      message: 'Artisan account created successfully. Pending verification.',
-      artisanProfileId: artisanProfile._id
+      message: "Artisan profile created successfully. Awaiting approval.",
+      artisanProfileId: artisanProfile._id,
     });
-
   } catch (error) {
-    console.error('Error in registerArtisan:', error);
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error in registerArtisan:", error);
+    }
+
     return res.status(500).json({
       success: false,
       error: {
         code: "SERVER_ERROR",
         message: "Internal server error during artisan signup",
-        details: error.message
-      }
+        details: error.message,
+      },
     });
   }
 };
 
-module.exports = { registerArtisan };
+const loginArtisan = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Email and password are required",
+        },
+      });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: "AUTH_FAILED",
+          message: "Invalid email or password",
+        },
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: "AUTH_FAILED",
+          message: "Invalid email or password",
+        },
+      });
+    }
+
+    if (user.role !== "artisan") {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: "FORBIDDEN",
+          message: "Access denied. Not an artisan account.",
+        },
+      });
+    }
+
+    const token = jwt.sign(
+      { userId: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    const artisanProfile = await ArtisanProfile.findOne({ userId: user._id });
+
+    if (!artisanProfile) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Artisan profile not found",
+        },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Login successful",
+      token,
+      user: {
+        firstname: user.firstname,
+        lastname: user.lastname,
+        email: user.email,
+        role: user.role,
+      },
+      artisanProfile,
+    });
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Error in loginArtisan:", error);
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: "SERVER_ERROR",
+        message: "Internal server error during artisan login",
+        details: error.message,
+      },
+    });
+  }
+};
+
+module.exports = { registerArtisan, loginArtisan };

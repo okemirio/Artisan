@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
 
-const artisanUpload = require('../middleware/artisanUpload'); // import multer config
-const { registerArtisan } = require('../controllers/ArtisanController');
+const artisanUpload = require('../middleware/artisanUpload'); // Multer config
+const { registerArtisan, loginArtisan } = require('../controllers/ArtisanController'); // ✅ Include loginArtisan
 
-// Use artisanUpload middleware before controller to handle files + multipart/form-data
+// ✅ Register Artisan (with file uploads)
 router.post('/register-artisan', artisanUpload, registerArtisan);
+
+// ✅ Login Artisan (no file upload needed)
+router.post('/login-artisan', loginArtisan);
 
 module.exports = router;

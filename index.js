@@ -4,6 +4,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs');
+const multer = require('multer');
 
 dotenv.config();
 
@@ -20,10 +21,20 @@ const artisanRoutes = require('./Routes/artisanRoutes');
 const app = express();
 
 // CORS configuration — consider allowing your production frontend domain as well
-app.use(cors({ origin: ['http://localhost:3000'], credentials: true }));
+app.use(cors({   origin: ['http://localhost:3000', 'http://localhost:5000'], credentials: true }));
 
 // Body parsing middleware — make sure to add multipart/form-data parser like multer in artisanRoutes if needed
 app.use(express.json());
+
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ message: err.message });
+  }
+  if (err) {
+    return res.status(400).json({ message: err.message });
+  }
+  next();
+});
 
 // Serve uploads folder statically for file access
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

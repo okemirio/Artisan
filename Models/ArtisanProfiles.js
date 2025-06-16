@@ -36,7 +36,7 @@ const artisanProfileSchema = new mongoose.Schema({
     proofOfAddress: String,
   },
 
-  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'pending' }
+  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved' }
 }, { timestamps: true });
 
 module.exports = mongoose.model('ArtisanProfile', artisanProfileSchema);
