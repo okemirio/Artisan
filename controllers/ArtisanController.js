@@ -183,5 +183,99 @@ const loginArtisan = async (req, res) => {
   }
 };
 
+const completeArtisanProfile = async (req, res) => {
+  try {
+    const errors = [];
 
-module.exports = { registerArtisan, loginArtisan };
+    const userId = req.user?.userId; // From token middleware
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        error: { code: "UNAUTHORIZED", message: "User not authenticated" },
+      });
+    }
+
+    const user = await User.findById(userId);
+    if (!user || user.role !== "artisan") {
+      return res.status(403).json({
+        success: false,
+        error: { code: "FORBIDDEN", message: "Access denied" },
+      });
+    }
+
+    const existingProfile = await ArtisanProfile.findOne({ userId });
+    if (existingProfile) {
+      return res.status(400).json({
+        success: false,
+        error: { code: "PROFILE_EXISTS", message: "Profile already submitted" },
+      });
+    }
+
+    // Parse JSON fields
+    let personalInfo, professionalInfo;
+    try {
+      personalInfo = JSON.parse(req.body.personalInfo);
+      professionalInfo = JSON.parse(req.body.professionalInfo);
+    } catch {
+      errors.push({ field: "JSON", message: "Invalid personal/professional info JSON" });
+    }
+
+    // Validate text inputs
+    if (!personalInfo?.name) errors.push({ field: "name", message: "Name is required" });
+    if (!personalInfo?.phoneNumber) errors.push({ field: "phone", message: "Phone is required" });
+    if (!professionalInfo?.artisanType) errors.push({ field: "type", message: "Artisan type is required" });
+
+    // Validate file uploads
+    const files = req.files || {};
+    const requiredFiles = [
+      "passportPhoto",
+      "govIdCard",
+      "businessCertificate",
+      "proofOfAddress",
+    ];
+    requiredFiles.forEach((field) => {
+      if (!files[field]) errors.push({ field, message: `${field} file is required` });
+    });
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: { code: "VALIDATION_ERROR", details: errors },
+      });
+    }
+
+    // Build file URLs
+    const baseUrl = process.env.FILE_BASE_URL || "";
+    const verificationDocuments = {
+      passportPhoto: baseUrl + files.passportPhoto[0].filename,
+      govIdCard: baseUrl + files.govIdCard[0].filename,
+      businessCertificate: baseUrl + files.businessCertificate[0].filename,
+      proofOfAddress: baseUrl + files.proofOfAddress[0].filename,
+    };
+
+    // Save profile
+    const artisanProfile = new ArtisanProfile({
+      userId,
+      personalInfo,
+      professionalInfo,
+      verificationDocuments,
+      status: "pending",
+    });
+
+    await artisanProfile.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "Profile submitted for review.",
+      artisanProfileId: artisanProfile._id,
+    });
+  } catch (error) {
+    console.error("Error completing artisan profile:", error);
+    return res.status(500).json({
+      success: false,
+      error: { code: "SERVER_ERROR", message: error.message },
+    });
+  }
+};
+
+module.exports = { registerArtisan, loginArtisan, completeArtisanProfile };
