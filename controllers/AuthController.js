@@ -92,51 +92,33 @@ const register = async (req, res) => {
 
 // Login
 const login = async (req, res) => {
-  const { email, password, selectedRole } = req.body; // expects role from frontend
+  const { email, password } = req.body;
 
-  if (!email || !password || !selectedRole) {
-    console.log("Missing email, password, or role");
-    return res.status(400).json({ message: "Email, password and role are required." });
+  if (!email || !password) {
+    console.log("Missing email or password");
+    return res.status(400).json({ message: "Email and password are required." });
   }
 
   try {
     console.log("Login attempt for:", email);
 
-    // Find user by email (make email lowercase to ensure consistency)
+    // Find user by email (case-insensitive)
     const user = await UserModel.findOne({ email: email.toLowerCase() });
     if (!user) {
       console.log("User not found");
       return res.status(400).json({ message: "Invalid credentials." });
     }
 
-    console.log("Found user with role:", user.role);
-
-    // Check if role matches (important to prevent role escalation)
-    if (user.role !== selectedRole) {
-      console.log(`Role mismatch: expected ${selectedRole} but got ${user.role}`);
-      return res.status(403).json({ message: "Role mismatch. Unauthorized login." });
-    }
-
     // Compare password
     const isMatch = await bcrypt.compare(password, user.password);
-    console.log("Raw password sent:", password);
-    console.log("Hashed password in DB:", user.password);
-
-
-    console.log("Does bcrypt.compare return:", isMatch);
-
     if (!isMatch) {
-      return res.status(400).json({ message: "Invalid credentials." });
-    }
-
-    if (!isMatch) {
-      console.log("Password does not match");
+      console.log("Password mismatch");
       return res.status(400).json({ message: "Invalid credentials." });
     }
 
     console.log("Password matched, generating tokens...");
 
-    // Generate JWT access and refresh tokens
+    // Generate access and refresh tokens
     const accessToken = jwt.sign(
       { userId: user._id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
@@ -149,13 +131,12 @@ const login = async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    // Save refresh token in DB for this user
+    // Save refresh token
     user.refreshToken = refreshToken;
     await user.save();
 
     console.log("Login successful for:", email);
 
-    // Return tokens and role to frontend
     res.json({
       accessToken,
       refreshToken,
