@@ -6,7 +6,7 @@ const artisanProfileSchema = new mongoose.Schema({
   personalInfo: {
     name: { type: String, required: true },
     email: { type: String, required: true },
-    phoneNumber: { type: String, required: true },
+    phoneNumber: { type: String, required: false },
     gender: { type: String, enum: ['male', 'female', 'other'] },
     fullAddress: String,
     state: String,
@@ -36,7 +36,11 @@ const artisanProfileSchema = new mongoose.Schema({
     proofOfAddress: String,
   },
 
-  status: { type: String, enum: ['pending', 'approved', 'rejected'], default: 'approved' }
+  status: {
+    type: String,
+    enum: ['incomplete', 'pending', 'approved', 'rejected'], // ✅ Added 'incomplete'
+    default: 'incomplete' // ✅ Default set to 'incomplete'
+  }
 }, { timestamps: true });
 
 module.exports = mongoose.model('ArtisanProfile', artisanProfileSchema);

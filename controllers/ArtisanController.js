@@ -3,12 +3,12 @@ const User = require("../Models/user");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
+// ------------------ Register Artisan ------------------
 
 const registerArtisan = async (req, res) => {
   try {
     const { firstname, lastname, email, password, confirmPassword } = req.body;
 
-    // Input validation
     if (!firstname || !lastname || !email || !password || !confirmPassword) {
       return res.status(400).json({
         success: false,
@@ -29,7 +29,6 @@ const registerArtisan = async (req, res) => {
       });
     }
 
-    // Check if email already exists
     const existingUser = await User.findOne({ email: email.toLowerCase() });
     if (existingUser) {
       return res.status(409).json({
@@ -41,10 +40,8 @@ const registerArtisan = async (req, res) => {
       });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user
     const newUser = new User({
       firstname,
       lastname,
@@ -55,7 +52,19 @@ const registerArtisan = async (req, res) => {
 
     await newUser.save();
 
-    // Create JWT token
+    // ✅ Create a minimal ArtisanProfile with status "incomplete"
+    const artisanProfile = new ArtisanProfile({
+      userId: newUser._id,
+      personalInfo: {
+        name: `${firstname} ${lastname}`,
+        email: newUser.email
+        // phoneNumber is optional
+      },
+      status: "incomplete" // ✅ Allowed by updated schema
+    });
+
+    await artisanProfile.save();
+
     const token = jwt.sign(
       { userId: newUser._id, role: newUser.role },
       process.env.JWT_SECRET,
@@ -89,6 +98,8 @@ const registerArtisan = async (req, res) => {
   }
 };
 
+
+// ------------------ Login Artisan ------------------
 const loginArtisan = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -96,34 +107,16 @@ const loginArtisan = async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        error: {
-          code: "VALIDATION_ERROR",
-          message: "Email and password are required",
-        },
+        error: { code: "VALIDATION_ERROR", message: "Email and password are required" },
       });
     }
 
     const user = await User.findOne({ email: email.toLowerCase() });
 
-    if (!user) {
+    if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({
         success: false,
-        error: {
-          code: "AUTH_FAILED",
-          message: "Invalid email or password",
-        },
-      });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-
-    if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        error: {
-          code: "AUTH_FAILED",
-          message: "Invalid email or password",
-        },
+        error: { code: "AUTH_FAILED", message: "Invalid email or password" },
       });
     }
 
@@ -133,15 +126,13 @@ const loginArtisan = async (req, res) => {
       { expiresIn: "7d" }
     );
 
+    // ✅ Check for ArtisanProfile (will always exist due to registration logic)
     const artisanProfile = await ArtisanProfile.findOne({ userId: user._id });
 
     if (!artisanProfile) {
       return res.status(404).json({
         success: false,
-        error: {
-          code: "PROFILE_NOT_FOUND",
-          message: "Artisan profile not found",
-        },
+        error: { code: "PROFILE_NOT_FOUND", message: "Artisan profile not found" },
       });
     }
 
@@ -158,10 +149,7 @@ const loginArtisan = async (req, res) => {
       artisanProfile,
     });
   } catch (error) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Error in loginArtisan:", error);
-    }
-
+    console.error("Error in loginArtisan:", error);
     return res.status(500).json({
       success: false,
       error: {
@@ -173,12 +161,10 @@ const loginArtisan = async (req, res) => {
   }
 };
 
-
+// ------------------ Complete Artisan Profile ------------------
 const completeArtisanProfile = async (req, res) => {
   try {
-    const errors = [];
-
-    const userId = req.user?.userId; // From token middleware
+    const userId = req.user?.userId;
     if (!userId) {
       return res.status(401).json({
         success: false,
@@ -194,38 +180,34 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
-    const existingProfile = await ArtisanProfile.findOne({ userId });
-    if (existingProfile) {
-      return res.status(400).json({
+    const profile = await ArtisanProfile.findOne({ userId });
+    if (!profile) {
+      return res.status(404).json({
         success: false,
-        error: { code: "PROFILE_EXISTS", message: "Profile already submitted" },
+        error: { code: "PROFILE_NOT_FOUND", message: "Artisan profile missing" },
       });
     }
 
-    // Parse JSON fields
+    // Parse fields
     let personalInfo, professionalInfo;
+    const errors = [];
     try {
       personalInfo = JSON.parse(req.body.personalInfo);
       professionalInfo = JSON.parse(req.body.professionalInfo);
     } catch {
-      errors.push({ field: "JSON", message: "Invalid personal/professional info JSON" });
+      errors.push({ field: "JSON", message: "Invalid JSON in personal/professional info" });
     }
 
-    // Validate text inputs
+    // Validate required inputs
     if (!personalInfo?.name) errors.push({ field: "name", message: "Name is required" });
     if (!personalInfo?.phoneNumber) errors.push({ field: "phone", message: "Phone is required" });
-    if (!professionalInfo?.artisanType) errors.push({ field: "type", message: "Artisan type is required" });
+    if (!professionalInfo?.artisanType) errors.push({ field: "artisanType", message: "Artisan type is required" });
 
     // Validate file uploads
     const files = req.files || {};
-    const requiredFiles = [
-      "passportPhoto",
-      "govIdCard",
-      "businessCertificate",
-      "proofOfAddress",
-    ];
+    const requiredFiles = ["passportPhoto", "govIdCard", "businessCertificate", "proofOfAddress"];
     requiredFiles.forEach((field) => {
-      if (!files[field]) errors.push({ field, message: `${field} file is required` });
+      if (!files[field]) errors.push({ field, message: `${field} is required` });
     });
 
     if (errors.length > 0) {
@@ -235,7 +217,6 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
-    // Build file URLs
     const baseUrl = process.env.FILE_BASE_URL || "";
     const verificationDocuments = {
       passportPhoto: baseUrl + files.passportPhoto[0].filename,
@@ -244,21 +225,24 @@ const completeArtisanProfile = async (req, res) => {
       proofOfAddress: baseUrl + files.proofOfAddress[0].filename,
     };
 
-    // Save profile
-    const artisanProfile = new ArtisanProfile({
-      userId,
-      personalInfo,
-      professionalInfo,
-      verificationDocuments,
-      status: "pending",
-    });
+    // ✅ Update existing ArtisanProfile
+    const updatedProfile = await ArtisanProfile.findOneAndUpdate(
+      { userId },
+      {
+        $set: {
+          personalInfo,
+          professionalInfo,
+          verificationDocuments,
+          status: "pending",
+        },
+      },
+      { new: true }
+    );
 
-    await artisanProfile.save();
-
-    return res.status(201).json({
+    return res.status(200).json({
       success: true,
-      message: "Profile submitted for review.",
-      artisanProfileId: artisanProfile._id,
+      message: "Profile completed and submitted for review",
+      artisanProfile: updatedProfile,
     });
   } catch (error) {
     console.error("Error completing artisan profile:", error);
@@ -269,4 +253,8 @@ const completeArtisanProfile = async (req, res) => {
   }
 };
 
-module.exports = { registerArtisan, loginArtisan, completeArtisanProfile };
+module.exports = {
+  registerArtisan,
+  loginArtisan,
+  completeArtisanProfile,
+};
