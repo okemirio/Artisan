@@ -127,16 +127,6 @@ const loginArtisan = async (req, res) => {
       });
     }
 
-    if (user.role !== "artisan") {
-      return res.status(403).json({
-        success: false,
-        error: {
-          code: "FORBIDDEN",
-          message: "Access denied. Not an artisan account.",
-        },
-      });
-    }
-
     const token = jwt.sign(
       { userId: user._id, role: user.role },
       process.env.JWT_SECRET,
@@ -182,6 +172,7 @@ const loginArtisan = async (req, res) => {
     });
   }
 };
+
 
 const completeArtisanProfile = async (req, res) => {
   try {
