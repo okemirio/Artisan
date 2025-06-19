@@ -30,6 +30,7 @@ const artisanProfileSchema = new mongoose.Schema({
   },
 
   verificationDocuments: {
+  
     passportPhoto: String,
     govIdCard: String,
     businessCertificate: String,
