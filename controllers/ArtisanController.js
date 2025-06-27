@@ -239,6 +239,9 @@ const completeArtisanProfile = async (req, res) => {
       { new: true }
     );
 
+    // ✅ Mark profile as completed
+    await User.findByIdAndUpdate(userId, { profileCompleted: true });
+
     return res.status(200).json({
       success: true,
       message: "Profile completed and submitted for review",
@@ -253,8 +256,99 @@ const completeArtisanProfile = async (req, res) => {
   }
 };
 
+//..................get artisan profile.................
+const getArtisanProfile = async (req, res) => {
+  try {
+    const profile = await ArtisanProfile.findOne({ userId: req.params.userId });
+
+    if (!profile) {
+      return res.status(404).json({ message: "Artisan profile not found" });
+    }
+
+    // Format the profile like your UI expects
+    const formatted = {
+      name: profile.personalInfo.name,
+      profession: profile.professionalInfo.artisanType,
+      location: `${profile.personalInfo.city}, ${profile.personalInfo.state}`,
+      pricePerHour: profile.professionalInfo.skills?.[0]?.pricing?.pricePerHour || null,
+      profilePicture: profile.verificationDocuments.passportPhoto,
+      businessName: profile.professionalInfo.businessName,
+      availability: profile.professionalInfo.skills?.[0]?.pricing?.availability || null,
+
+      // ✅ NEW: Pull all uploaded certifications
+      certifications: profile.verificationDocuments.businessCertificates || [],
+
+      about: profile.professionalInfo.bio || "No bio added yet"
+    };
+
+    res.status(200).json(formatted);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+//..................search artisan.................
+
+const searchArtisans = async (req, res) => {
+  try {
+    const { name, location, work, page = 1, limit = 10 } = req.query;
+
+    // ✅ Pagination variables
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // ✅ Dynamic query builder
+    const query = {};
+
+    if (name) {
+      query['personalInfo.name'] = { $regex: name, $options: 'i' };
+    }
+
+    if (location) {
+      query.$or = [
+        { 'personalInfo.state': { $regex: location, $options: 'i' } },
+        { 'personalInfo.city': { $regex: location, $options: 'i' } },
+        { 'personalInfo.localGovernment': { $regex: location, $options: 'i' } },
+      ];
+    }
+
+    if (work) {
+      query['professionalInfo.artisanType'] = { $regex: work, $options: 'i' };
+    }
+
+    // ✅ If no filter, return all artisans (fallback)
+    const totalCount = await ArtisanProfile.countDocuments(query);
+    const results = await ArtisanProfile.find(query)
+      .skip(skip)
+      .limit(limitNum);
+
+    res.status(200).json({
+      success: true,
+      page: pageNum,
+      limit: limitNum,
+      totalCount,
+      count: results.length,
+      results,
+    });
+  } catch (error) {
+    console.error("❌ Error in searchArtisans:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error during search",
+      error: error.message,
+    });
+  }
+};
+
+
+
+
+
 module.exports = {
   registerArtisan,
   loginArtisan,
   completeArtisanProfile,
+  getArtisanProfile,
+    searchArtisans, 
+
 };

@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
   firstname: {
@@ -17,6 +17,7 @@ const userSchema = new mongoose.Schema({
     unique: true,
     lowercase: true,
     trim: true,
+    index: true, // 🟢 improves performance
   },
   password: {
     type: String,
@@ -31,7 +32,7 @@ const userSchema = new mongoose.Schema({
   },
   refreshToken: {
     type: String,
-    default: '',
+    default: "",
   },
   isActive: {
     type: Boolean,
@@ -41,15 +42,19 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
-  createdAt: {
-    type: Date,
-    default: Date.now,
+  profileCompleted: {
+    type: Boolean,
+    default: false, // 🟢 New field for artisan tracking
   },
   googleId: {
     type: String,
     unique: true,
     sparse: true,
   },
+  createdAt: {
+    type: Date,
+    default: Date.now,
+  },
 });
 
-module.exports = mongoose.model('User', userSchema);
+module.exports = mongoose.model("User", userSchema);

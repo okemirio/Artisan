@@ -27,7 +27,7 @@ const upload = multer({
 const artisanUpload = upload.fields([
   { name: 'passportPhoto', maxCount: 1 },
   { name: 'govIdCard', maxCount: 1 },
-  { name: 'businessCertificate', maxCount: 1 },
+  { name: 'businessCertificate', maxCount: 10 },
   { name: 'proofOfAddress', maxCount: 1 },
 ]);
 

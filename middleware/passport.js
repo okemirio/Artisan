@@ -1,65 +1,67 @@
-const passport = require('passport');
-const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const User = require('../Models/user');
+// config/passport.js
+const GoogleStrategy = require("passport-google-oauth20").Strategy;
+const passport = require("passport");
+const User = require("../Models/user");
+
+console.log("✅ GoogleStrategy registered");
 
 passport.use(
   new GoogleStrategy(
     {
       clientID: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      callbackURL: '/auth/google/callback',
+      callbackURL: process.env.GOOGLE_CALLBACK_URL,
     },
     async (accessToken, refreshToken, profile, done) => {
-      try {
-        const email = profile.emails[0].value;
+      console.log("✅ GoogleStrategy triggered");
 
-        // Check if user already exists with googleId
+      try {
+        if (!profile) {
+          console.error("❌ No profile received from Google");
+          return done(new Error("No profile received"), null);
+        }
+
+        const email = profile.emails?.[0]?.value;
+        if (!email) {
+          console.error("❌ Email not found in Google profile:", profile);
+          return done(new Error("No email found in Google profile"), null);
+        }
+
+        console.log("📧 Google email:", email);
+        console.log("🆔 Google ID:", profile.id);
+
         let user = await User.findOne({ googleId: profile.id });
 
         if (!user) {
-          // If not found by googleId, check if email exists (manual registration)
+          console.log("🔍 No user with googleId. Checking by email...");
           user = await User.findOne({ email });
 
           if (user) {
-            // Link Google ID to existing account
+            console.log("🔗 Linking existing user with Google ID...");
             user.googleId = profile.id;
             await user.save();
           } else {
-            // Create new user
-            const [firstname, ...rest] = profile.displayName.split(' ');
-            const lastname = rest.join(' ') || ' ';
-
+            console.log("🆕 Creating new user from Google profile...");
             user = await User.create({
-              firstname: firstname || 'Google',
-              lastname: lastname || 'User',
+              firstname: profile.name?.givenName || "Google",
+              lastname: profile.name?.familyName || "User",
               email,
               googleId: profile.id,
-              role: 'user',
+              role: "user",
               emailVerified: true,
               isActive: true,
               createdAt: new Date(),
             });
           }
+        } else {
+          console.log("✅ Existing user found by googleId.");
         }
 
         return done(null, user);
       } catch (err) {
-        console.error('Google auth error:', err);
+        console.error("❌ Error inside GoogleStrategy:", err);
         return done(err, null);
       }
     }
   )
 );
-
-passport.serializeUser((user, done) => {
-  done(null, user.id);
-});
-
-passport.deserializeUser(async (id, done) => {
-  try {
-    const user = await User.findById(id);
-    done(null, user);
-  } catch (err) {
-    done(err, null);
-  }
-});

@@ -6,13 +6,20 @@ const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 const ArtisanProfile = require("../Models/ArtisanProfiles");
 
-// Register a new user (manual registration)
+// Register a new user (manual or Google registration)
 const register = async (req, res) => {
-  const { firstname, lastname, email, password, role = "user" } = req.body;
+  const {
+    firstname,
+    lastname,
+    email,
+    password,
+    role = "user",
+    googleId, // ✅ for Google OAuth
+  } = req.body;
 
   // Validate input
-  if (!firstname || !lastname || !email || !password || !role) {
-    return res.status(400).json({ message: "All fields are required." });
+  if (!firstname || !lastname || !email || !role) {
+    return res.status(400).json({ message: "Firstname, lastname, email, and role are required." });
   }
 
   if (firstname.length < 2 || lastname.length < 2) {
@@ -23,66 +30,71 @@ const register = async (req, res) => {
 
   const emailRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}$/;
   if (!emailRegex.test(email)) {
-    return res
-      .status(400)
-      .json({ message: "Please provide a valid email address." });
-  }
-
-  if (password.length < 8) {
-    return res
-      .status(400)
-      .json({ message: "Password must be at least 8 characters long." });
-  }
-
-  const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/;
-  if (!passwordRegex.test(password)) {
-    return res.status(400).json({
-      message:
-        "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.",
-    });
+    return res.status(400).json({ message: "Please provide a valid email address." });
   }
 
   if (!["user", "artisan"].includes(role)) {
     return res.status(400).json({ message: "Invalid role specified." });
   }
 
+  // Password is required for manual registration, not Google
+  if (!googleId) {
+    if (!password) {
+      return res.status(400).json({ message: "Password is required for manual registration." });
+    }
+    if (password.length < 8) {
+      return res.status(400).json({ message: "Password must be at least 8 characters long." });
+    }
+
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/;
+    if (!passwordRegex.test(password)) {
+      return res.status(400).json({
+        message:
+          "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character.",
+      });
+    }
+  }
+
   try {
     const existingUser = await UserModel.findOne({ email });
 
-    if (existingUser && existingUser.googleId) {
+    if (existingUser) {
       return res.status(400).json({
-        message: "This email is registered via Google. Please log in with Google.",
+        message: existingUser.googleId
+          ? "This email is registered via Google. Please log in with Google."
+          : "Email already registered.",
       });
     }
 
-    if (existingUser) {
-      return res.status(400).json({ message: "Email already registered." });
+    let hashedPassword = null;
+    if (!googleId) {
+      hashedPassword = await bcrypt.hash(password, 10);
     }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = new UserModel({
       firstname,
       lastname,
       email,
       password: hashedPassword,
+      googleId: googleId || null, // ✅ stores googleId if applicable
       role,
       createdAt: new Date(),
       isActive: true,
-      emailVerified: false,
+      emailVerified: !!googleId, // ✅ auto-verify if Google account
     });
 
     await newUser.save();
 
     res.status(201).json({
       success: true,
-      message: "Registration successful.",
+      message: googleId ? "Google registration successful." : "Registration successful.",
       user: {
         id: newUser._id,
         firstname: newUser.firstname,
         lastname: newUser.lastname,
         email: newUser.email,
         role: newUser.role,
+        googleId: newUser.googleId || undefined,
       },
     });
   } catch (err) {
@@ -94,6 +106,7 @@ const register = async (req, res) => {
     });
   }
 };
+
 
 // Login with email & password
 const login = async (req, res) => {
