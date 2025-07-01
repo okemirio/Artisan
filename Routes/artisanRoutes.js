@@ -29,6 +29,7 @@ router.get('/search', searchArtisans);
 // ✅ Complete Artisan Profile (Google or Manual - protected route)
 router.post(
   '/complete-profile',
+  authenticate,
   authMiddleware,
   artisanUpload,           // Uploads: passportPhoto, govIdCard, etc.
   completeArtisanProfile
