@@ -2,7 +2,8 @@ const ArtisanProfile = require("../Models/ArtisanProfiles");
 const User = require("../Models/user");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-
+const fs = require('fs');
+const cloudinary = require('../utils/cloudinary'); // ✅ cloudinary uploader helper
 // ------------------ Register Artisan ------------------
 
 const registerArtisan = async (req, res) => {
@@ -164,6 +165,7 @@ const loginArtisan = async (req, res) => {
 // ------------------ Complete Artisan Profile ------------------
 const completeArtisanProfile = async (req, res) => {
   try {
+    // ✅ Step 1: Authenticate user
     const userId = req.user?.userId;
     if (!userId) {
       return res.status(401).json({
@@ -172,6 +174,7 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
+    // ✅ Step 2: Validate user and role
     const user = await User.findById(userId);
     if (!user || user.role !== "artisan") {
       return res.status(403).json({
@@ -180,34 +183,55 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
+    // ✅ Step 3: Check for artisan profile
     const profile = await ArtisanProfile.findOne({ userId });
     if (!profile) {
       return res.status(404).json({
         success: false,
-        error: { code: "PROFILE_NOT_FOUND", message: "Artisan profile missing" },
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Artisan profile missing",
+        },
       });
     }
 
-    // Parse fields
+    // ✅ Step 4: Parse personal and professional info
     let personalInfo, professionalInfo;
     const errors = [];
     try {
       personalInfo = JSON.parse(req.body.personalInfo);
       professionalInfo = JSON.parse(req.body.professionalInfo);
     } catch {
-      errors.push({ field: "JSON", message: "Invalid JSON in personal/professional info" });
+      errors.push({
+        field: "JSON",
+        message: "Invalid JSON in personal/professional info",
+      });
     }
 
-    // Validate required inputs
-    if (!personalInfo?.name) errors.push({ field: "name", message: "Name is required" });
-    if (!personalInfo?.phoneNumber) errors.push({ field: "phone", message: "Phone is required" });
-    if (!professionalInfo?.artisanType) errors.push({ field: "artisanType", message: "Artisan type is required" });
+    // ✅ Step 5: Validate text fields
+    if (!personalInfo?.name)
+      errors.push({ field: "name", message: "Name is required" });
+    if (!personalInfo?.phoneNumber)
+      errors.push({ field: "phone", message: "Phone is required" });
+    if (!professionalInfo?.artisanType)
+      errors.push({
+        field: "artisanType",
+        message: "Artisan type is required",
+      });
 
-    // Validate file uploads
+    // ✅ Step 6: Validate file uploads
     const files = req.files || {};
-    const requiredFiles = ["passportPhoto", "govIdCard", "businessCertificate", "proofOfAddress"];
+    const requiredFiles = [
+      "passportPhoto",
+      "govIdCard",
+      "businessCertificate",
+      "proofOfAddress",
+    ];
+
     requiredFiles.forEach((field) => {
-      if (!files[field]) errors.push({ field, message: `${field} is required` });
+      if (!files[field]) {
+        errors.push({ field, message: `${field} is required` });
+      }
     });
 
     if (errors.length > 0) {
@@ -217,15 +241,34 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
-    const baseUrl = process.env.FILE_BASE_URL || "";
-    const verificationDocuments = {
-      passportPhoto: baseUrl + files.passportPhoto[0].filename,
-      govIdCard: baseUrl + files.govIdCard[0].filename,
-      businessCertificate: baseUrl + files.businessCertificate[0].filename,
-      proofOfAddress: baseUrl + files.proofOfAddress[0].filename,
-    };
+    // ✅ Step 7: Upload files to Cloudinary
+    const verificationDocuments = {};
 
-    // ✅ Update existing ArtisanProfile
+    for (const field of requiredFiles) {
+      const file = files[field][0];
+
+      try {
+        const result = await cloudinary.uploader.upload(file.path, {
+          folder: "artisans",
+        });
+
+        verificationDocuments[field] = result.secure_url;
+
+        // ✅ Delete file locally after upload
+        fs.unlinkSync(file.path);
+      } catch (uploadErr) {
+        return res.status(500).json({
+          success: false,
+          error: {
+            code: "UPLOAD_ERROR",
+            message: `Failed to upload ${field} to Cloudinary`,
+            details: uploadErr.message,
+          },
+        });
+      }
+    }
+
+    // ✅ Step 8: Update artisan profile
     const updatedProfile = await ArtisanProfile.findOneAndUpdate(
       { userId },
       {
@@ -239,9 +282,10 @@ const completeArtisanProfile = async (req, res) => {
       { new: true }
     );
 
-    // ✅ Mark profile as completed
+    // ✅ Step 9: Mark user profile as completed
     await User.findByIdAndUpdate(userId, { profileCompleted: true });
 
+    // ✅ Step 10: Respond success
     return res.status(200).json({
       success: true,
       message: "Profile completed and submitted for review",
