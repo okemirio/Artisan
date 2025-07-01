@@ -3,8 +3,6 @@ const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const passport = require("passport");
 const User = require("../Models/user");
 
-console.log("✅ GoogleStrategy registered");
-
 passport.use(
   new GoogleStrategy(
     {
@@ -56,6 +54,7 @@ passport.use(
         } else {
           console.log("✅ Existing user found by googleId.");
         }
+
 
         return done(null, user);
       } catch (err) {

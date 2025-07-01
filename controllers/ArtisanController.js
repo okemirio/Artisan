@@ -339,6 +339,42 @@ const searchArtisans = async (req, res) => {
     });
   }
 };
+const uploadProjectMedia = async (req, res) => {
+  try {
+    const artisanId = req.params.id;
+    const artisan = await ArtisanProfile.findById(artisanId);
+
+    if (!artisan) {
+      return res.status(404).json({ success: false, message: 'Artisan not found' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No media file uploaded' });
+    }
+
+    const mediaType = req.file.mimetype.startsWith('video') ? 'video' : 'image';
+    const fileUrl = `${req.protocol}://${req.get('host')}/uploads/projects/${req.file.filename}`;
+
+    // Ensure projects field exists
+    artisan.projects = artisan.projects || [];
+    artisan.projects.push({
+      title: req.body.title || 'Untitled',
+      type: mediaType,
+      url: fileUrl
+    });
+
+    await artisan.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Project media uploaded successfully',
+      project: artisan.projects.at(-1)
+    });
+  } catch (error) {
+    console.error('❌ Error uploading project:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
 
 
 
@@ -350,5 +386,5 @@ module.exports = {
   completeArtisanProfile,
   getArtisanProfile,
     searchArtisans, 
-
+uploadProjectMedia
 };
