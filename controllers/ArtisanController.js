@@ -386,36 +386,49 @@ const searchArtisans = async (req, res) => {
 const uploadProjectMedia = async (req, res) => {
   try {
     const artisanId = req.params.id;
-    const artisan = await ArtisanProfile.findById(artisanId);
+
+    // ✅ Find the artisan by userId (not _id of profile)
+    const artisan = await ArtisanProfile.findOne({ userId: artisanId });
 
     if (!artisan) {
-      return res.status(404).json({ success: false, message: 'Artisan not found' });
+      return res.status(404).json({ success: false, message: "Artisan not found" });
     }
 
     if (!req.file) {
-      return res.status(400).json({ success: false, message: 'No media file uploaded' });
+      return res.status(400).json({ success: false, message: "No media file uploaded" });
     }
 
-    const mediaType = req.file.mimetype.startsWith('video') ? 'video' : 'image';
-    const fileUrl = `${req.protocol}://${req.get('host')}/uploads/projects/${req.file.filename}`;
+    const isVideo = req.file.mimetype.startsWith("video");
 
-    // Ensure projects field exists
-    artisan.projects = artisan.projects || [];
-    artisan.projects.push({
-      title: req.body.title || 'Untitled',
-      type: mediaType,
-      url: fileUrl
+    // ✅ Upload to Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      resource_type: isVideo ? "video" : "image",
+      folder: "artisan_projects",
     });
 
+    // ✅ Remove local temp file
+    fs.unlinkSync(req.file.path);
+
+    // ✅ Prepare media info
+    const projectData = {
+      title: req.body.title || "Untitled",
+      type: isVideo ? "video" : "image",
+      url: result.secure_url,
+      uploadedAt: new Date(),
+    };
+
+    // ✅ Add to projects array
+    artisan.projects = artisan.projects || [];
+    artisan.projects.push(projectData);
     await artisan.save();
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      message: 'Project media uploaded successfully',
-      project: artisan.projects.at(-1)
+      message: "Project media uploaded successfully",
+      project: artisan.projects.at(-1),
     });
   } catch (error) {
-    console.error('❌ Error uploading project:', error);
+    console.error("❌ Error uploading project:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
