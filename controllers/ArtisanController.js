@@ -165,7 +165,6 @@ const loginArtisan = async (req, res) => {
 // ------------------ Complete Artisan Profile ------------------
 const completeArtisanProfile = async (req, res) => {
   try {
-    // ✅ Step 1: Authenticate user
     const userId = req.user?.userId;
     if (!userId) {
       return res.status(401).json({
@@ -174,7 +173,6 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
-    // ✅ Step 2: Validate user and role
     const user = await User.findById(userId);
     if (!user || user.role !== "artisan") {
       return res.status(403).json({
@@ -183,7 +181,6 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
-    // ✅ Step 3: Check for artisan profile
     const profile = await ArtisanProfile.findOne({ userId });
     if (!profile) {
       return res.status(404).json({
@@ -195,38 +192,46 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
-    // ✅ Step 4: Parse personal and professional info
+    // Parse JSON safely
     let personalInfo, professionalInfo;
     const errors = [];
     try {
-      personalInfo = JSON.parse(req.body.personalInfo);
-      professionalInfo = JSON.parse(req.body.professionalInfo);
-    } catch {
-      errors.push({
-        field: "JSON",
-        message: "Invalid JSON in personal/professional info",
+      const rawPersonalInfo = req.body.personalInfo;
+      const rawProfessionalInfo = req.body.professionalInfo;
+
+      if (typeof rawPersonalInfo !== "string" || typeof rawProfessionalInfo !== "string") {
+        throw new Error("personalInfo and professionalInfo must be JSON strings");
+      }
+
+      personalInfo = JSON.parse(rawPersonalInfo);
+      professionalInfo = JSON.parse(rawProfessionalInfo);
+    } catch (e) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "INVALID_JSON",
+          message: "Invalid format for personalInfo or professionalInfo",
+          details: e.message,
+          expectedFormat: {
+            personalInfo: JSON.stringify({
+              name: "John Doe",
+              phoneNumber: "08012345678",
+            }),
+            professionalInfo: JSON.stringify({
+              artisanType: "Carpenter",
+            }),
+          },
+        },
       });
     }
 
-    // ✅ Step 5: Validate text fields
-    if (!personalInfo?.name)
-      errors.push({ field: "name", message: "Name is required" });
-    if (!personalInfo?.phoneNumber)
-      errors.push({ field: "phone", message: "Phone is required" });
-    if (!professionalInfo?.artisanType)
-      errors.push({
-        field: "artisanType",
-        message: "Artisan type is required",
-      });
+    // Validate required fields
+    if (!personalInfo?.name) errors.push({ field: "name", message: "Name is required" });
+    if (!personalInfo?.phoneNumber) errors.push({ field: "phoneNumber", message: "Phone is required" });
+    if (!professionalInfo?.artisanType) errors.push({ field: "artisanType", message: "Artisan type is required" });
 
-    // ✅ Step 6: Validate file uploads
     const files = req.files || {};
-    const requiredFiles = [
-      "passportPhoto",
-      "govIdCard",
-      "businessCertificate",
-      "proofOfAddress",
-    ];
+    const requiredFiles = ["passportPhoto", "govIdCard", "businessCertificate", "proofOfAddress"];
 
     requiredFiles.forEach((field) => {
       if (!files[field]) {
@@ -241,34 +246,30 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
-    // ✅ Step 7: Upload files to Cloudinary
+    // Upload each file to Cloudinary
     const verificationDocuments = {};
 
     for (const field of requiredFiles) {
       const file = files[field][0];
-
       try {
-        const result = await cloudinary.uploader.upload(file.path, {
+        const uploadResult = await cloudinary.uploader.upload(file.path, {
           folder: "artisans",
         });
-
-        verificationDocuments[field] = result.secure_url;
-
-        // ✅ Delete file locally after upload
-        fs.unlinkSync(file.path);
+        verificationDocuments[field] = uploadResult.secure_url;
+        fs.unlinkSync(file.path); // Delete temp file
       } catch (uploadErr) {
         return res.status(500).json({
           success: false,
           error: {
             code: "UPLOAD_ERROR",
-            message: `Failed to upload ${field} to Cloudinary`,
+            message: `Cloudinary upload failed for ${field}`,
             details: uploadErr.message,
           },
         });
       }
     }
 
-    // ✅ Step 8: Update artisan profile
+    // Update artisan profile
     const updatedProfile = await ArtisanProfile.findOneAndUpdate(
       { userId },
       {
@@ -282,23 +283,27 @@ const completeArtisanProfile = async (req, res) => {
       { new: true }
     );
 
-    // ✅ Step 9: Mark user profile as completed
+    // Mark user as completed
     await User.findByIdAndUpdate(userId, { profileCompleted: true });
 
-    // ✅ Step 10: Respond success
     return res.status(200).json({
       success: true,
       message: "Profile completed and submitted for review",
       artisanProfile: updatedProfile,
     });
   } catch (error) {
-    console.error("Error completing artisan profile:", error);
+    console.error("❌ Error completing profile:", error);
     return res.status(500).json({
       success: false,
-      error: { code: "SERVER_ERROR", message: error.message },
+      error: {
+        code: "SERVER_ERROR",
+        message: "Internal server error",
+        details: error.message,
+      },
     });
   }
 };
+
 
 //..................get artisan profile.................
 const getArtisanProfile = async (req, res) => {
