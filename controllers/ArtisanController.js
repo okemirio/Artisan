@@ -2,8 +2,8 @@ const ArtisanProfile = require("../Models/ArtisanProfiles");
 const User = require("../Models/user");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const fs = require('fs');
-const cloudinary = require('../utils/cloudinary'); // ✅ cloudinary uploader helper
+const fs = require("fs");
+const cloudinary = require("../utils/cloudinary"); // ✅ cloudinary uploader helper
 // ------------------ Register Artisan ------------------
 
 const registerArtisan = async (req, res) => {
@@ -58,10 +58,10 @@ const registerArtisan = async (req, res) => {
       userId: newUser._id,
       personalInfo: {
         name: `${firstname} ${lastname}`,
-        email: newUser.email
+        email: newUser.email,
         // phoneNumber is optional
       },
-      status: "incomplete" // ✅ Allowed by updated schema
+      status: "incomplete", // ✅ Allowed by updated schema
     });
 
     await artisanProfile.save();
@@ -99,7 +99,6 @@ const registerArtisan = async (req, res) => {
   }
 };
 
-
 // ------------------ Login Artisan ------------------
 const loginArtisan = async (req, res) => {
   try {
@@ -108,7 +107,10 @@ const loginArtisan = async (req, res) => {
     if (!email || !password) {
       return res.status(400).json({
         success: false,
-        error: { code: "VALIDATION_ERROR", message: "Email and password are required" },
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Email and password are required",
+        },
       });
     }
 
@@ -133,7 +135,10 @@ const loginArtisan = async (req, res) => {
     if (!artisanProfile) {
       return res.status(404).json({
         success: false,
-        error: { code: "PROFILE_NOT_FOUND", message: "Artisan profile not found" },
+        error: {
+          code: "PROFILE_NOT_FOUND",
+          message: "Artisan profile not found",
+        },
       });
     }
 
@@ -165,6 +170,7 @@ const loginArtisan = async (req, res) => {
 // ------------------ Complete Artisan Profile ------------------
 const completeArtisanProfile = async (req, res) => {
   try {
+    // ✅ Step 1: Authenticate user
     const userId = req.user?.userId;
     if (!userId) {
       return res.status(401).json({
@@ -173,6 +179,7 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
+    // ✅ Step 2: Validate user and role
     const user = await User.findById(userId);
     if (!user || user.role !== "artisan") {
       return res.status(403).json({
@@ -181,6 +188,7 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
+    // ✅ Step 3: Check for existing profile
     const profile = await ArtisanProfile.findOne({ userId });
     if (!profile) {
       return res.status(404).json({
@@ -192,15 +200,20 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
-    // Parse JSON safely
+    // ✅ Step 4: Parse personalInfo & professionalInfo from stringified JSON
     let personalInfo, professionalInfo;
     const errors = [];
     try {
       const rawPersonalInfo = req.body.personalInfo;
       const rawProfessionalInfo = req.body.professionalInfo;
 
-      if (typeof rawPersonalInfo !== "string" || typeof rawProfessionalInfo !== "string") {
-        throw new Error("personalInfo and professionalInfo must be JSON strings");
+      if (
+        typeof rawPersonalInfo !== "string" ||
+        typeof rawProfessionalInfo !== "string"
+      ) {
+        throw new Error(
+          "personalInfo and professionalInfo must be JSON strings"
+        );
       }
 
       personalInfo = JSON.parse(rawPersonalInfo);
@@ -212,29 +225,33 @@ const completeArtisanProfile = async (req, res) => {
           code: "INVALID_JSON",
           message: "Invalid format for personalInfo or professionalInfo",
           details: e.message,
-          expectedFormat: {
-            personalInfo: JSON.stringify({
-              name: "John Doe",
-              phoneNumber: "08012345678",
-            }),
-            professionalInfo: JSON.stringify({
-              artisanType: "Carpenter",
-            }),
-          },
         },
       });
     }
 
-    // Validate required fields
-    if (!personalInfo?.name) errors.push({ field: "name", message: "Name is required" });
-    if (!personalInfo?.phoneNumber) errors.push({ field: "phoneNumber", message: "Phone is required" });
-    if (!professionalInfo?.artisanType) errors.push({ field: "artisanType", message: "Artisan type is required" });
+    // ✅ Step 5: Validate required text fields
+    if (!personalInfo?.name)
+      errors.push({ field: "name", message: "Name is required" });
+    if (!personalInfo?.phoneNumber)
+      errors.push({ field: "phoneNumber", message: "Phone is required" });
+    if (!professionalInfo?.artisanType)
+      errors.push({
+        field: "artisanType",
+        message: "Artisan type is required",
+      });
 
+    // ✅ Step 6: Map uploaded files with fallback names
     const files = req.files || {};
-    const requiredFiles = ["passportPhoto", "govIdCard", "businessCertificate", "proofOfAddress"];
+    const remappedFiles = {
+      passportPhoto: files.passportPhoto || files.passport || null,
+      govIdCard: files.govIdCard || files.IDCard || files.id || null,
+      businessCertificate: files.businessCertificate || files.cert || null,
+      proofOfAddress: files.proofOfAddress || files.proof || null,
+    };
 
+    const requiredFiles = Object.keys(remappedFiles);
     requiredFiles.forEach((field) => {
-      if (!files[field]) {
+      if (!remappedFiles[field]) {
         errors.push({ field, message: `${field} is required` });
       }
     });
@@ -246,17 +263,16 @@ const completeArtisanProfile = async (req, res) => {
       });
     }
 
-    // Upload each file to Cloudinary
+    // ✅ Step 7: Upload to Cloudinary
     const verificationDocuments = {};
-
     for (const field of requiredFiles) {
-      const file = files[field][0];
+      const file = remappedFiles[field][0]; // multer gives array
       try {
         const uploadResult = await cloudinary.uploader.upload(file.path, {
           folder: "artisans",
         });
         verificationDocuments[field] = uploadResult.secure_url;
-        fs.unlinkSync(file.path); // Delete temp file
+        fs.unlinkSync(file.path); // Clean up temp file
       } catch (uploadErr) {
         return res.status(500).json({
           success: false,
@@ -269,7 +285,7 @@ const completeArtisanProfile = async (req, res) => {
       }
     }
 
-    // Update artisan profile
+    // ✅ Step 8: Update artisan profile
     const updatedProfile = await ArtisanProfile.findOneAndUpdate(
       { userId },
       {
@@ -283,9 +299,10 @@ const completeArtisanProfile = async (req, res) => {
       { new: true }
     );
 
-    // Mark user as completed
+    // ✅ Step 9: Mark user as completed
     await User.findByIdAndUpdate(userId, { profileCompleted: true });
 
+    // ✅ Step 10: Respond
     return res.status(200).json({
       success: true,
       message: "Profile completed and submitted for review",
@@ -304,7 +321,6 @@ const completeArtisanProfile = async (req, res) => {
   }
 };
 
-
 //..................get artisan profile.................
 const getArtisanProfile = async (req, res) => {
   try {
@@ -319,15 +335,17 @@ const getArtisanProfile = async (req, res) => {
       name: profile.personalInfo.name,
       profession: profile.professionalInfo.artisanType,
       location: `${profile.personalInfo.city}, ${profile.personalInfo.state}`,
-      pricePerHour: profile.professionalInfo.skills?.[0]?.pricing?.pricePerHour || null,
+      pricePerHour:
+        profile.professionalInfo.skills?.[0]?.pricing?.pricePerHour || null,
       profilePicture: profile.verificationDocuments.passportPhoto,
       businessName: profile.professionalInfo.businessName,
-      availability: profile.professionalInfo.skills?.[0]?.pricing?.availability || null,
+      availability:
+        profile.professionalInfo.skills?.[0]?.pricing?.availability || null,
 
       // ✅ NEW: Pull all uploaded certifications
       certifications: profile.verificationDocuments.businessCertificates || [],
 
-      about: profile.professionalInfo.bio || "No bio added yet"
+      about: profile.professionalInfo.bio || "No bio added yet",
     };
 
     res.status(200).json(formatted);
@@ -350,26 +368,24 @@ const searchArtisans = async (req, res) => {
     const query = {};
 
     if (name) {
-      query['personalInfo.name'] = { $regex: name, $options: 'i' };
+      query["personalInfo.name"] = { $regex: name, $options: "i" };
     }
 
     if (location) {
       query.$or = [
-        { 'personalInfo.state': { $regex: location, $options: 'i' } },
-        { 'personalInfo.city': { $regex: location, $options: 'i' } },
-        { 'personalInfo.localGovernment': { $regex: location, $options: 'i' } },
+        { "personalInfo.state": { $regex: location, $options: "i" } },
+        { "personalInfo.city": { $regex: location, $options: "i" } },
+        { "personalInfo.localGovernment": { $regex: location, $options: "i" } },
       ];
     }
 
     if (work) {
-      query['professionalInfo.artisanType'] = { $regex: work, $options: 'i' };
+      query["professionalInfo.artisanType"] = { $regex: work, $options: "i" };
     }
 
     // ✅ If no filter, return all artisans (fallback)
     const totalCount = await ArtisanProfile.countDocuments(query);
-    const results = await ArtisanProfile.find(query)
-      .skip(skip)
-      .limit(limitNum);
+    const results = await ArtisanProfile.find(query).skip(skip).limit(limitNum);
 
     res.status(200).json({
       success: true,
@@ -396,11 +412,15 @@ const uploadProjectMedia = async (req, res) => {
     const artisan = await ArtisanProfile.findOne({ userId: artisanId });
 
     if (!artisan) {
-      return res.status(404).json({ success: false, message: "Artisan not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Artisan not found" });
     }
 
     if (!req.file) {
-      return res.status(400).json({ success: false, message: "No media file uploaded" });
+      return res
+        .status(400)
+        .json({ success: false, message: "No media file uploaded" });
     }
 
     const isVideo = req.file.mimetype.startsWith("video");
@@ -438,15 +458,11 @@ const uploadProjectMedia = async (req, res) => {
   }
 };
 
-
-
-
-
 module.exports = {
   registerArtisan,
   loginArtisan,
   completeArtisanProfile,
   getArtisanProfile,
-    searchArtisans, 
-uploadProjectMedia
+  searchArtisans,
+  uploadProjectMedia,
 };
