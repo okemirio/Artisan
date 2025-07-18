@@ -39,10 +39,10 @@ const upload = multer({
 
 // Define expected file fields
 const artisanUpload = upload.fields([
-  { name: 'passportPhoto', maxCount: 1 },
-  { name: 'govIdCard', maxCount: 1 },
-  { name: 'businessCertificate', maxCount: 10 }, // ✅ multiple certificates allowed
-  { name: 'proofOfAddress', maxCount: 1 }
+{ name: 'passport', maxCount: 1 },
+  { name: 'id', maxCount: 1 },
+  { name: 'cert', maxCount: 1 },
+  { name: 'proof', maxCount: 1 }
 ]);
 
 module.exports = artisanUpload;

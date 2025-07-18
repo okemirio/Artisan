@@ -35,10 +35,10 @@ const artisanProfileSchema = new mongoose.Schema(
     },
 
     verificationDocuments: {
-      passportPhoto: String,
-      govIdCard: String,
-      businessCertificates: [String], // ✅ ARRAY of uploaded certificate URLs
-      proofOfAddress: String,
+      passport: String,
+      id: String,
+      cert: [String],
+      proof: String,
     },
     projects: [
       {
